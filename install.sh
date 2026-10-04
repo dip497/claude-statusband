@@ -12,6 +12,8 @@ fi
 # An already added marketplace is refreshed instead, so a re-run upgrades.
 claude plugin marketplace add "$source" || claude plugin marketplace update statusband
 claude plugin install statusband@statusband
+# a no-op on a first install; on a re-run it is what brings the newer copy
+claude plugin update statusband@statusband || true
 
 settings="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 if [ -f "$settings" ] && grep -q '"statusLine"' "$settings"; then

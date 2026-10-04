@@ -15,6 +15,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 claude plugin install statusband@statusband
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# a no-op on a first install; on a re-run it is what brings the newer copy
+claude plugin update statusband@statusband
 
 $configDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
 $settings = Join-Path $configDir 'settings.json'

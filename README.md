@@ -37,7 +37,21 @@ Or without a script, the same on every platform, inside Claude Code:
 /plugin install statusband --marketplace dip497/claude-statusband
 ```
 
-Running the installer again upgrades. Restart Claude Code afterwards.
+It installs for your user, so every new Claude Code session loads it, in any project.
+Sessions already open pick it up after a restart or `/reload-plugins`.
+
+### Updates
+
+Claude Code does not auto-update third-party plugins unless you turn it on, once:
+`/plugin` → Marketplaces → statusband → Enable auto-update.
+
+Otherwise update by hand, either by running the installer again or with:
+
+```bash
+claude plugin update statusband@statusband
+```
+
+An update applies to the next session, or to a running one after `/reload-plugins`.
 
 Mods are an early-access part of Claude Code and the API may change between releases.
 This was written against Claude Code 2.1.289.
