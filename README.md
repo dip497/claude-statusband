@@ -42,19 +42,18 @@ Sessions already open pick it up after a restart or `/reload-plugins`.
 
 ### Updates
 
-Claude Code does not auto-update third-party plugins unless you turn it on, once:
-`/plugin` → Marketplaces → statusband → Enable auto-update.
+Claude Code does not auto-update third-party plugins by default, so the install script turns
+auto-update on for statusband (the same flag as `/plugin` → Marketplaces → statusband →
+Enable auto-update). New versions then arrive by themselves, shortly after a session starts.
 
-Otherwise update by hand, either by running the installer again or with:
+To install without it, set `STATUSBAND_AUTO_UPDATE=0` before running the script. Installing
+with `/plugin install` leaves it off too. Either way you can update by hand:
 
 ```bash
 claude plugin update statusband@statusband
 ```
 
 An update applies to the next session, or to a running one after `/reload-plugins`.
-
-Mods are an early-access part of Claude Code and the API may change between releases.
-This was written against Claude Code 2.1.289.
 
 ### Removing an old status line
 
@@ -82,11 +81,18 @@ claude plugin marketplace remove statusband
 
 ## How the cache countdown is worked out
 
-Claude Code does not tell a mod the cache lifetime, so the band derives it from the
-[documented defaults](https://code.claude.com/docs/en/prompt-caching): one hour on a
-subscription inside its plan's usage, five minutes otherwise. A `promptCacheTtl` setting
-or the `CLAUDE_CODE_PROMPT_CACHE_TTL` / `FORCE_PROMPT_CACHING_5M` variables are not seen,
-so the countdown is wrong if you set them.
+Claude Code does not tell a mod when the cache expires, so the band works it out: the
+lifetime restarts at every response of the main conversation, and its length follows the
+[documented rules](https://code.claude.com/docs/en/prompt-caching). One hour on a
+subscription inside its plan's usage, five minutes otherwise, unless you set it yourself:
+`FORCE_PROMPT_CACHING_5M`, `CLAUDE_CODE_PROMPT_CACHE_TTL`, the `promptCacheTtl` setting and
+`ENABLE_PROMPT_CACHING_1H` are read, in that order.
+
+It is still an estimate. Anything else that shortens the lifetime on Anthropic's side is not
+seen, and the hit rate is the last turn's, not the session's.
+
+Git counts refresh after each turn and after any tool that can change files. A change made
+outside the session shows at the next of those.
 
 ## Develop
 

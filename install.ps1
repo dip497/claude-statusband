@@ -19,6 +19,21 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 claude plugin update statusband@statusband
 
 $configDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+
+# Claude Code leaves a third-party plugin on the copy it installed unless auto-update is on for
+# its marketplace. This sets the same flag the /plugin toggle does. STATUSBAND_AUTO_UPDATE=0 skips it.
+$known = Join-Path $configDir 'plugins/known_marketplaces.json'
+$auto = $false
+if ($env:STATUSBAND_AUTO_UPDATE -ne '0' -and (Test-Path $known)) {
+    $data = Get-Content $known -Raw | ConvertFrom-Json
+    if ($data.PSObject.Properties.Name -contains 'statusband') {
+        $data.statusband | Add-Member -NotePropertyName autoUpdate -NotePropertyValue $true -Force
+        # No BOM: Windows PowerShell's UTF8 encoding writes one, and a JSON reader may refuse it.
+        [System.IO.File]::WriteAllText($known, ($data | ConvertTo-Json -Depth 100), (New-Object System.Text.UTF8Encoding $false))
+        $auto = $true
+    }
+}
+
 $settings = Join-Path $configDir 'settings.json'
 if ((Test-Path $settings) -and (Select-String -Path $settings -Pattern '"statusLine"' -Quiet)) {
     Write-Host ''
@@ -30,3 +45,8 @@ if ((Test-Path $settings) -and (Select-String -Path $settings -Pattern '"statusL
 
 Write-Host ''
 Write-Host 'statusband is installed. Restart Claude Code to see it.'
+if ($auto) {
+    Write-Host 'Auto-update is on: new versions arrive by themselves. Turn it off under /plugin > Marketplaces.'
+} else {
+    Write-Host 'Auto-update is off. Turn it on under /plugin > Marketplaces > statusband, or re-run this to update.'
+}

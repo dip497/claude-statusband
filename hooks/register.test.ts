@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { bar, cacheTtlMin, gitSummary, shortModel, span, tone } from './register'
+import { bar, cacheTtlMin, gitSummary, resolveTtlMin, shortModel, span, tone } from './register'
 
 test('span, bar and tone', async () => {
   expect(span(72 * 60_000)).toBe('1h12m')
@@ -27,6 +27,8 @@ test('gitSummary counts staged, unstaged, untracked and ahead/behind', async () 
 test('the band draws the measured figures on the terminal', async ($, on) => {
   mock.clock(on)
   on('session.start', () => ({ cwd: '/tmp' }) as never)
+  mock.env(on, {})
+  on('settings.read', () => ({ value: {} }) as never)
   on('session.usage', () => ({
     value: {
       startedAt: 0,
@@ -49,6 +51,8 @@ test('a model switch turns a warm cache cold', async ($, on) => {
   // a real clock reads far from 0, which the mod keeps for a cache already gone
   await mock.clock(on).advance(36_000_000)
   on('session.start', () => ({ cwd: '/tmp' }) as never)
+  mock.env(on, {})
+  on('settings.read', () => ({ value: {} }) as never)
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, percent: 42 }, rateLimits: [] } }))
   on('session.model', () => ({ value: 'opus' }))
   on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
@@ -72,6 +76,8 @@ test('a compact refreshes the context figure without waiting for the next turn',
   await mock.clock(on).advance(36_000_000)
   let usage: unknown = { startedAt: 0, context: { window: 200000, percent: 80 }, rateLimits: [] }
   on('session.start', () => ({ cwd: '/tmp' }) as never)
+  mock.env(on, {})
+  on('settings.read', () => ({ value: {} }) as never)
   on('session.usage', () => ({ value: usage }) as never)
   on('session.model', () => ({ value: 'opus' }))
   on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
@@ -86,5 +92,35 @@ test('a compact refreshes the context figure without waiting for the next turn',
   ui = await $.ui.mount(BAND)
   expect(await ui.find({ type: 'Text', text: /12%/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /80%/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a cache lifetime the person set wins over the plan default', async () => {
+  const inPlan = [{ percent: 40 }]
+  expect(resolveTtlMin({}, inPlan)).toBe(60)
+  expect(resolveTtlMin({ settingTtl: '5m' }, inPlan)).toBe(5)
+  expect(resolveTtlMin({ settingTtl: '1h' }, [])).toBe(60)
+  expect(resolveTtlMin({ envTtl: '1h', settingTtl: '5m' }, [])).toBe(60)
+  expect(resolveTtlMin({ force5m: '1', envTtl: '1h', enable1h: '1' }, inPlan)).toBe(5)
+  expect(resolveTtlMin({ enable1h: '1' }, [])).toBe(60)
+  expect(resolveTtlMin({ settingTtl: '1h' }, [{ percent: 100 }])).toBe(5)
+  expect(resolveTtlMin({ settingTtl: 'nonsense' }, [])).toBe(5)
+})
+
+test('git counts refresh after a tool that edits files', async ($, on) => {
+  mock.clock(on)
+  let untracked = ''
+  on('session.start', () => ({ cwd: '/tmp' }) as never)
+  mock.env(on, {})
+  on('settings.read', () => ({ value: {} }) as never)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, percent: 42 }, rateLimits: [] } }) as never)
+  on('session.model', () => ({ value: 'opus' }))
+  on('process.run', () => ({ value: { exitCode: 0, stdout: '# branch.head main\n' + untracked, stderr: '' } }) as never)
+  on('tool.call', () => ({ result: '' }) as never)
+  await $.session.start({ source: 'startup', cwd: '/tmp' } as never)
+  untracked = '? new.ts\n'
+  await $.tool.call({ tool: 'Write', file_path: '/tmp/new.ts', content: '' } as never)
+  const ui = await $.ui.mount({ plugin: 'statusband', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120 } } as never)
+  expect(await ui.find({ type: 'Text', text: /main \?:1/ })).toBeDefined()
   await ui.unmount()
 })

@@ -19,6 +19,7 @@ const view = atom({ plugin: 'statusband', key: 'view' } as const, {
   cacheHit: null,
   lastResponseAt: null,
 })
+const FILE_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'Bash'])
 const warned = new Set<string>()
 let ticker: Timer | undefined
 
@@ -36,9 +37,27 @@ export const bar = (percent: number, cells = 8): string => {
 export const tone = (percent: number): string => (percent >= 90 ? 'error' : percent >= 70 ? 'warning' : 'success')
 
 // The main conversation caches for an hour on a subscription inside its plan's usage, five minutes otherwise.
-// ponytail: a promptCacheTtl setting or disabled telemetry is not seen here; read the setting if that bites
 export const cacheTtlMin = (limits: readonly { percent: number }[]): number =>
   limits.length > 0 && limits.every(l => l.percent < 100) ? 60 : 5
+
+export type TtlControls = { force5m?: string; envTtl?: string; settingTtl?: unknown; enable1h?: string }
+
+// What the person set wins over the default, in the order Claude Code reads its controls;
+// an hour asked for is not given while the plan is on usage credits.
+export const resolveTtlMin = (c: TtlControls, limits: readonly { percent: number }[]): number => {
+  const asked =
+    c.force5m === '1'
+      ? '5m'
+      : c.envTtl === '5m' || c.envTtl === '1h'
+        ? c.envTtl
+        : c.settingTtl === '5m' || c.settingTtl === '1h'
+          ? c.settingTtl
+          : c.enable1h === '1'
+            ? '1h'
+            : undefined
+  if (asked === undefined) return cacheTtlMin(limits)
+  return asked === '1h' && limits.every(l => l.percent < 100) ? 60 : 5
+}
 
 export const shortModel = (id: string): string => id.replace(/^claude-/, '').replace(/-\d{8}$/, '')
 
@@ -68,7 +87,7 @@ export const gitSummary = (status: string, shortstat: string): string => {
 // A repository's own config can name programs git runs for it; none of them may run for a status read.
 const GIT = ['git', '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false', '-c', 'diff.external=']
 
-// ponytail: git is re-read once per measure (after each turn), not watched live
+// ponytail: re-read on a measure and after a tool that can change files, not watched; an edit made outside the session shows at the next of those
 async function readGit($: EngineInterface): Promise<string> {
   const status = await $.process.run([...GIT, 'status', '--porcelain=v2', '--branch'])
   if (status.exitCode !== 0) return ''
@@ -109,7 +128,14 @@ async function measure($: EngineInterface, figures: Figures): Promise<void> {
     percent: Math.round(r.percentUsed),
     resetsAt: r.resetsAt === undefined ? null : Date.parse(r.resetsAt),
   }))
-  // no reading yet says nothing about the plan, so the lifetime already known stands
+  const controls: TtlControls = {
+    force5m: await $.env.get('FORCE_PROMPT_CACHING_5M'),
+    envTtl: await $.env.get('CLAUDE_CODE_PROMPT_CACHE_TTL'),
+    settingTtl: ((await $.settings.read()) as Record<string, unknown>).promptCacheTtl,
+    enable1h: await $.env.get('ENABLE_PROMPT_CACHING_1H'),
+  }
+  const isSet = Object.values(controls).some(v => v !== undefined)
+  // with nothing set and no reading yet, nothing is known of the plan: the lifetime already known stands
   await update($, view, old => ({
     ...old,
     now,
@@ -117,8 +143,13 @@ async function measure($: EngineInterface, figures: Figures): Promise<void> {
     git,
     context,
     limits,
-    cacheTtlMin: limits.length > 0 ? cacheTtlMin(limits) : old.cacheTtlMin,
+    cacheTtlMin: isSet || limits.length > 0 ? resolveTtlMin(controls, limits) : old.cacheTtlMin,
   }))
+}
+
+async function refreshGit($: EngineInterface): Promise<void> {
+  const git = await readGit($)
+  await update($, view, old => (old.git === git ? old : { ...old, git }))
 }
 
 // Reads the figures now, for a moment the engine raises no measurement of its own.
@@ -191,7 +222,9 @@ export const register: Register = on => {
   // a tool call follows a response, so the cache was just touched; a subagent's requests touch only its own
   on('tool.call', async ($, e, next) => {
     if (e.agentId === undefined) await touchCache($)
-    return next(e)
+    const ran = await next(e)
+    if (FILE_TOOLS.has(e.tool)) await refreshGit($)
+    return ran
   })
 
   on('turn.complete', async ($, e, next) => {
