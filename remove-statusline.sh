@@ -2,6 +2,8 @@
 # Removes the "statusLine" entry from Claude Code's user settings, keeping a backup.
 # macOS and Linux; Windows uses remove-statusline.ps1.
 set -eu
+# settings can hold tokens: nothing written here is readable by other users
+umask 077
 
 settings="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 
@@ -11,7 +13,7 @@ if [ ! -f "$settings" ] || ! grep -q '"statusLine"' "$settings"; then
 fi
 
 backup="$settings.bak-$(date +%Y%m%d%H%M%S)"
-cp "$settings" "$backup"
+cp -p "$settings" "$backup"
 tmp="$settings.tmp-$$"
 
 if command -v jq >/dev/null 2>&1; then
@@ -26,6 +28,8 @@ else
   exit 1
 fi
 
-mv "$tmp" "$settings"
+# written through the existing file, so it keeps its own permissions
+cat "$tmp" > "$settings"
+rm -f "$tmp"
 echo "Removed the status line from $settings."
 echo "The previous file is kept at $backup."

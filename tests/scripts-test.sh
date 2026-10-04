@@ -9,6 +9,7 @@ mkdir -p "$work/bin" "$work/cfg"
 printf '#!/bin/sh\necho "claude $*" >> "%s/calls"\n' "$work" > "$work/bin/claude"
 chmod +x "$work/bin/claude"
 cp "$here/tests/settings.json" "$work/cfg/settings.json"
+chmod 600 "$work/cfg/settings.json"
 export CLAUDE_CONFIG_DIR="$work/cfg"
 
 out=$(PATH="$work/bin:$PATH" sh "$here/install.sh")
@@ -21,6 +22,10 @@ sh "$here/remove-statusline.sh"
 grep -q '"model"' "$work/cfg/settings.json"
 grep -q 'git status' "$work/cfg/settings.json"
 grep -q statusLine "$work"/cfg/settings.json.bak-*
+# a private settings file stays private, and so does its backup
+for f in "$work"/cfg/settings.json*; do
+  case $(ls -l "$f") in -rw-------*) ;; *) echo "$f is not private" >&2; exit 1 ;; esac
+done
 
 sh "$here/remove-statusline.sh" | grep -q 'nothing to remove'
 echo "scripts ok"
