@@ -1,0 +1,9 @@
+{
+  "name": "statusband",
+  "version": "0.1.0",
+  "description": "A two-row band above the prompt: context, prompt cache countdown and hit rate, rate limits with reset times, git",
+  "author": { "name": "dip497" },
+  "license": "MIT",
+  "repository": "https://github.com/dip497/claude-statusband",
+  "types": "./types/index.d.ts"
+}

@@ -1,0 +1,6 @@
+{
+  "name": "statusband",
+  "description": "statusband, a Claude Code mod that shows context, prompt cache, rate limits and git above the prompt",
+  "owner": { "name": "dip497" },
+  "plugins": [{ "name": "statusband", "source": "./" }]
+}
