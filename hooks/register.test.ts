@@ -66,3 +66,25 @@ test('a model switch turns a warm cache cold', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /98% hit/ })).toBeUndefined()
   await ui.unmount()
 })
+
+test('a compact refreshes the context figure without waiting for the next turn', async ($, on) => {
+  on('classic.PostCompact', () => ({}) as never)
+  await mock.clock(on).advance(36_000_000)
+  let usage: unknown = { startedAt: 0, context: { window: 200000, percent: 80 }, rateLimits: [] }
+  on('session.start', () => ({ cwd: '/tmp' }) as never)
+  on('session.usage', () => ({ value: usage }) as never)
+  on('session.model', () => ({ value: 'opus' }))
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
+  await $.session.start({ source: 'startup', cwd: '/tmp' } as never)
+  const BAND = { plugin: 'statusband', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120 } } as never
+  let ui = await $.ui.mount(BAND)
+  expect(await ui.find({ type: 'Text', text: /80%/ })).toBeDefined()
+  await ui.unmount()
+  // the live window has no reading until the next response; the local estimate stands in
+  usage = { startedAt: 0, context: { window: 200000, breakdown: { percentage: 12.4 } }, rateLimits: [] }
+  await $.classic.PostCompact({ trigger: 'manual', compact_summary: '' } as never)
+  ui = await $.ui.mount(BAND)
+  expect(await ui.find({ type: 'Text', text: /12%/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /80%/ })).toBeUndefined()
+  await ui.unmount()
+})

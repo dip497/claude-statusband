@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # the mod API is early access: a weekly run against the newest Claude Code says when it moved
+  schedule:
+    - cron: '17 4 * * 1'
 
 jobs:
   scripts-unix:
@@ -24,3 +27,15 @@ jobs:
       - name: PowerShell 7
         shell: pwsh
         run: ./tests/scripts-test.ps1
+
+  mod:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: claude --version
+      - run: claude plugin validate .
+      - run: claude plugin test .

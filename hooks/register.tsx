@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, SessionMeasureInput } from 'claude-code'
+import type { EngineInterface, Register, SessionMeasureInput, Timer } from 'claude-code'
 
 import type { View } from '../types'
 
@@ -20,6 +20,7 @@ const view = atom({ plugin: 'statusband', key: 'view' } as const, {
   lastResponseAt: null,
 })
 const warned = new Set<string>()
+let ticker: Timer | undefined
 
 export const span = (ms: number): string => {
   const m = Math.max(0, Math.round(ms / MINUTE))
@@ -100,7 +101,9 @@ async function measure($: EngineInterface, figures: Figures): Promise<void> {
   const now = await $.clock.now()
   const model = shortModel(await $.session.model())
   const git = await readGit($)
-  const context = figures.context.percent ?? null
+  // a window with no response yet has no reading; the local estimate, when asked for, stands in
+  const fill = figures.context.percent ?? figures.context.breakdown?.percentage
+  const context = fill === undefined ? null : Math.round(fill)
   const limits = figures.rateLimits.map(r => ({
     label: LIMIT_LABEL[r.kind] ?? r.kind,
     percent: Math.round(r.percentUsed),
@@ -118,6 +121,11 @@ async function measure($: EngineInterface, figures: Figures): Promise<void> {
   }))
 }
 
+// Reads the figures now, for a moment the engine raises no measurement of its own.
+async function remeasure($: EngineInterface): Promise<void> {
+  await measure($, await $.session.usage({ breakdown: 'summary' }))
+}
+
 // A cache nothing can read any more: 0 is long enough ago to be past any lifetime.
 async function chillCache($: EngineInterface): Promise<void> {
   const now = await $.clock.now()
@@ -133,16 +141,21 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     // drops the line an earlier version of this mod pinned under the prompt
     $.ui.status(undefined)
-    await measure($, await $.session.usage())
-    // keeps the countdowns moving between turns
-    $.clock.every(MINUTE, () => void tick($))
+    await remeasure($)
+    // keeps the countdowns moving between turns; a session that starts over keeps one timer
+    ticker?.cancel()
+    ticker = $.clock.every(MINUTE, () => void tick($))
     return next(e)
   })
 
   // a resumed session says how long it sat idle and whether its cache outlived that
   on('classic.SessionStart', async ($, e, next) => {
     const idleMs = (e.seconds_since_last_response ?? 0) * 1000
-    if (e.prompt_cache_likely_expired === true) await chillCache($)
+    // a cleared conversation has no turn left for the hit rate to describe
+    if (e.source === 'clear') {
+      await update($, view, old => ({ ...old, cacheHit: null }))
+      await remeasure($)
+    } else if (e.prompt_cache_likely_expired === true) await chillCache($)
     else if (e.seconds_since_last_response !== undefined) {
       const now = await $.clock.now()
       await update($, view, old => ({
@@ -157,13 +170,16 @@ export const register: Register = on => {
   })
 
   // each model has a cache of its own, and a compacted history shares no prefix with the old one
+  // Neither is followed by a measurement until the next turn, and both move the context figure.
   on('classic.PostModelSwitch', async ($, e, next) => {
     await chillCache($)
+    await remeasure($)
     return next(e)
   })
 
   on('classic.PostCompact', async ($, e, next) => {
     await chillCache($)
+    await remeasure($)
     return next(e)
   })
 
@@ -172,9 +188,9 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // a tool call follows a response, so the cache was just touched
+  // a tool call follows a response, so the cache was just touched; a subagent's requests touch only its own
   on('tool.call', async ($, e, next) => {
-    await touchCache($)
+    if (e.agentId === undefined) await touchCache($)
     return next(e)
   })
 
@@ -219,7 +235,7 @@ export const register: Register = on => {
             <Text key={l.label}>
               <Text dimColor>{l.label} </Text>
               <Text color={tone(l.percent)}>{bar(l.percent)} {l.percent}%</Text>
-              {l.resetsAt !== null && <Text dimColor> resets {span(l.resetsAt - v.now)}</Text>}
+              {l.resetsAt !== null && l.resetsAt > v.now && <Text dimColor> resets {span(l.resetsAt - v.now)}</Text>}
             </Text>
           ))}
           {v.git !== '' && <Text color="magenta" wrap="truncate-end">{v.git}</Text>}
