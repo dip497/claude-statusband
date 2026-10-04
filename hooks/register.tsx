@@ -64,11 +64,14 @@ export const gitSummary = (status: string, shortstat: string): string => {
     .join(' ')
 }
 
+// A repository's own config can name programs git runs for it; none of them may run for a status read.
+const GIT = ['git', '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false', '-c', 'diff.external=']
+
 // ponytail: git is re-read once per measure (after each turn), not watched live
 async function readGit($: EngineInterface): Promise<string> {
-  const status = await $.process.run(['git', 'status', '--porcelain=v2', '--branch'])
+  const status = await $.process.run([...GIT, 'status', '--porcelain=v2', '--branch'])
   if (status.exitCode !== 0) return ''
-  const stat = await $.process.run(['git', 'diff', '--shortstat', 'HEAD'])
+  const stat = await $.process.run([...GIT, 'diff', '--no-ext-diff', '--no-textconv', '--shortstat', 'HEAD'])
   return gitSummary(status.stdout, stat.stdout)
 }
 
