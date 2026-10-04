@@ -19,21 +19,52 @@ Bars turn yellow at 70% and red at 90%.
 
 ## Install
 
-Inside Claude Code:
+macOS and Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dip497/claude-statusband/main/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/dip497/claude-statusband/main/install.ps1 | iex
+```
+
+Or without a script, the same on every platform, inside Claude Code:
 
 ```
 /plugin install statusband --marketplace dip497/claude-statusband
 ```
 
-Or from a shell:
-
-```bash
-claude plugin marketplace add dip497/claude-statusband
-claude plugin install statusband@statusband
-```
+Running the installer again upgrades. Restart Claude Code afterwards.
 
 Mods are an early-access part of Claude Code and the API may change between releases.
 This was written against Claude Code 2.1.289.
+
+### Removing an old status line
+
+statusband is a band above the prompt; it does not replace a custom status line
+(`ccstatusline`, a `statusline.sh`, ...) set as `statusLine` in `~/.claude/settings.json`,
+so both would show. The installer tells you when it finds one. To remove it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dip497/claude-statusband/main/remove-statusline.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/dip497/claude-statusband/main/remove-statusline.ps1 | iex
+```
+
+It deletes only the `statusLine` entry and keeps the previous file beside it as
+`settings.json.bak-<timestamp>`. On macOS and Linux it needs `jq`, `python3` or `node`.
+
+### Uninstall
+
+```bash
+claude plugin uninstall statusband@statusband
+claude plugin marketplace remove statusband
+```
 
 ## How the cache countdown is worked out
 
@@ -49,6 +80,7 @@ so the countdown is wrong if you set them.
 claude --plugin-dir .        # load it from this folder
 claude plugin validate .
 claude plugin test .
+sh tests/scripts-test.sh    # the install and removal scripts
 ```
 
 ## License
